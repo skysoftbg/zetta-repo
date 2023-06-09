@@ -1,0 +1,164 @@
+---
+- name: Deploy WordPress
+  hosts: all
+  user: ubuntu
+  gather_facts: yes
+  become: true
+  vars_files:
+    - "./vars/wordpress_vars.yml"
+  handlers:
+    - name: restart apache
+      service:
+        name: apache2
+        state: restarted
+  tasks:
+    - name: Install Dependencies
+      apt:
+        name: "{{ item }}"
+        update_cache: yes
+        state: latest
+      loop:
+        - "*" 
+        - apache2
+        - ghostscript
+        - libapache2-mod-php
+        - php
+        - mariadb-server
+        - php-bcmath
+        - php-curl
+        - php-imagick
+        - php-intl
+        - php-json
+        - php-mbstring
+        - php-mysql
+        - php-xml
+        - php-zip
+        - pip
+        - python3-mysqldb
+
+
+    - name: "Restarting and enabling mariadb services"
+      service: 
+        name: mariadb
+        state: restarted
+        enabled: yes
+
+    - name: check if mysqlpassword file exist
+      stat:
+        path: /root/.my.cnf
+      register: check_status1
+
+    - debug:
+        var: check_status1   
+    
+    - name: "Setting root password for mariadb if empty"
+      when: check_status1.stat.exists == false
+      mysql_user:
+        login_user: "root"
+        login_password: " "
+        name: "root"
+        password: "{{ mysqlrpe }}"
+        host_all: yes
+      register: check_status2
+      
+    - name: "Copying template if root password exist"
+      when: check_status2.changed == true
+      template:
+        src: my.cnf.tmpl
+        dest: /root/.my.cnf
+        mode: 0644
+      register: check_status3
+
+    - name: "Post restart mariadb services after copying template file"
+      when: check_status3.changed == true
+      service: 
+        name: mysql
+        state: restarted
+
+
+    - name: "Deleting anonymous mysql users"
+      mysql_user:
+        login_user: "root"
+        login_password: "{{ mysqlrpe }}"
+        user: ""
+        state: absent
+
+    - name: "Deleting database {{ mysql_add_db }} if exist"
+      mysql_db:
+        login_user: "root" 
+        login_password: "{{ mysqlrpe }}"
+        state: absent
+        name: "{{ mysql_add_db }}"
+
+    - name: "Deleting database user: {{ mysql_add_user }} if exist"
+      mysql_user:
+        login_user: "root" 
+        login_password: "{{ mysqlrpe }}"
+        state: absent
+        name: "{{ mysql_add_user }}"
+        host: "%"
+        
+    - name: "Creating additional database {{ mysql_add_db }} for wordpress site"
+      mysql_db:
+        login_user: "root" 
+        login_password: "{{ mysqlrpe }}"
+        state: present
+        name: "{{ mysql_add_db }}"
+        
+    - name: "Creating additional database user: {{ mysql_add_user }} for wordpress site"
+      mysql_user:
+        login_user: "root" 
+        login_password: "{{ mysqlrpe }}"
+        state: present
+        name: "{{ mysql_add_user }}"
+        host: "%"
+        password: "{{ mysql_add_pass }}"
+        priv: "{{ mysql_add_db }}.*:ALL"
+        
+    - name: "Create a directory if it does not exist"
+      file:
+        path: "'/var/www/"
+        state: directory
+        mode: '0755' 
+        owner: www-data
+        group: www-data
+
+
+
+    - name: Download WordPress
+      get_url:
+        url: "https://wordpress.org/latest.tar.gz"
+        dest: "/var/www/wordpress-latest-temp.tar.gz"
+    
+    - name: Extract WordPress
+      unarchive:
+        src: "/var/www/wordpress-latest-temp.tar.gz"
+        dest: "/var/www/"
+        remote_src: yes
+        owner: www-data
+        group: www-data
+
+    - name: "Creating a wp-config.php from template wp-config.php.tmpl"
+      template:
+        src: "./templates/wp-config.php.j2"
+        dest: "/var/www/wordpress/wp-config.php"
+
+
+    - name: Copy Apache configuration template
+      template:
+        src: "./templates/wordpress.conf.j2"
+        dest: "/etc/apache2/sites-available/wordpress.conf"
+      notify:
+      - restart apache
+
+           
+    - name: Enable WordPress site
+      file:
+        src: "/etc/apache2/sites-available/wordpress.conf"
+        dest: "/etc/apache2/sites-enabled/wordpress.conf"
+        state: link
+
+    - name: "Removing un-wanted files"
+      file: 
+        path: "/var/www/wordpress-latest-temp.tar.gz"
+        state: absent

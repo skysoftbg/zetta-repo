@@ -1,0 +1,6 @@
+---
+mysqlrpe: "mysqlroot123pass"
+mysql_add_db: "wordpressdb"
+mysql_add_user: "wordpress"
+mysql_add_pass: "wordpress@123"
+hostname: hostvars[inventory_hostname]['ansible_env'].SSH_CONNECTION.split(' ')[2]

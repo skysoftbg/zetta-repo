@@ -1,0 +1,10 @@
+<VirtualHost *:80>
+    ServerName {{ ansible_host }}
+    DocumentRoot /var/www/wordpress/
+    <Directory /var/www/wordpress/>
+        Options FollowSymLinks
+        AllowOverride Limit Options FileInfo
+        DirectoryIndex index.php
+        Require all granted
+    </Directory>
+</VirtualHost>
